@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "battle.h"
 #include "battle_anim.h"
 #include "battle_ai_main.h"
@@ -3137,7 +3138,7 @@ static void DoBattleIntro(void)
                 gBattleMons[battler].types[0] = GetSpeciesType(gBattleMons[battler].species, 0);
                 gBattleMons[battler].types[1] = GetSpeciesType(gBattleMons[battler].species, 1);
                 gBattleMons[battler].types[2] = TYPE_MYSTERY;
-                gBattleMons[battler].ability = GetAbilityBySpecies(gBattleMons[battler].species, gBattleMons[battler].abilityNum);
+                gBattleMons[battler].ability = GetMonAbility(GetBattlerMon(battler));
                 gBattleStruct->battlerState[battler].hpOnSwitchout = gBattleMons[battler].hp;
                 memset(&gBattleMons[battler].volatiles, 0, sizeof(struct Volatiles));
                 for (i = 0; i < NUM_BATTLE_STATS; i++)
@@ -5412,6 +5413,37 @@ static void WaitForEvoSceneToFinish(void)
 
 static void ReturnFromBattleToOverworld(void)
 {
+    if (GetGameOption(GAME_OPTION_NUZLOCKE))
+    {
+        u8 partyCount = CalculatePlayerPartyCount();
+        for (u8 i = partyCount; i > 0; i--)
+        {
+            u8 partyIndex = i - 1;
+            struct Pokemon *mon = &gParties[B_TRAINER_PLAYER][partyIndex];
+            if (GetMonData(mon, MON_DATA_SPECIES) != SPECIES_NONE
+             && (IsNuzlockePartyMonFainted(partyIndex)
+              || GetMonData(mon, MON_DATA_HP) == 0))
+            {
+                if (RetireNuzlockePartyMon(mon))
+                {
+                    for (u8 j = partyIndex; j + 1 < partyCount; j++)
+                        CopyMon(&gParties[B_TRAINER_PLAYER][j], &gParties[B_TRAINER_PLAYER][j + 1], sizeof(struct Pokemon));
+                    ZeroMonData(&gParties[B_TRAINER_PLAYER][partyCount - 1]);
+                    partyCount--;
+                }
+            }
+        }
+        CalculatePlayerPartyCount();
+    }
+    FinishNuzlockeBattle();
+    if (GetGameOption(GAME_OPTION_HEAL_AFTER_BATTLE))
+    {
+        for (u32 i = 0; i < PARTY_SIZE; i++)
+        {
+            if (GetMonData(&gParties[B_TRAINER_PLAYER][i], MON_DATA_SPECIES) != SPECIES_NONE)
+                HealPokemon(&gParties[B_TRAINER_PLAYER][i]);
+        }
+    }
     if (!(gBattleTypeFlags & BATTLE_TYPE_LINK))
     {
         CalculatePlayerPartyCount();

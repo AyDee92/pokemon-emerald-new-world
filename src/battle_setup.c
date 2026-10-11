@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "data.h"
 #include "main.h"
 #include "battle.h"
@@ -276,6 +277,7 @@ static void CreateBattleStartTask(enum BattleTransition transition, u16 song)
 {
     u8 taskId = CreateTask(Task_BattleStart, 1);
 
+    ResetNuzlockeFaintedPartySlots();
     gTasks[taskId].tTransition = transition;
     PlayMapChosenOrBattleBGM(song);
 }
@@ -311,6 +313,7 @@ static void CreateBattleStartTask_Debug(u8 transition, u16 song)
 {
     u8 taskId = CreateTask(Task_BattleStart_Debug, 1);
 
+    ResetNuzlockeFaintedPartySlots();
     gTasks[taskId].tTransition = transition;
     PlayMapChosenOrBattleBGM(song);
 }
@@ -337,15 +340,22 @@ static bool8 CheckSilphScopeInPokemonTower(u16 mapGroup, u16 mapNum)
 void BattleSetup_StartWildBattle(void)
 {
     if (GetSafariZoneFlag())
+    {
+        BeginNuzlockeWildEncounter();
         DoSafariBattle();
+    }
     else if (CheckSilphScopeInPokemonTower(gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum))
         DoGhostBattle();
     else
+    {
+        BeginNuzlockeWildEncounter();
         DoStandardWildBattle(FALSE);
+    }
 }
 
 void BattleSetup_StartDoubleWildBattle(void)
 {
+    BeginNuzlockeWildEncounter();
     DoStandardWildBattle(TRUE);
 }
 
@@ -356,6 +366,7 @@ void BattleSetup_StartMultiBattle(void)
 
     if (gSpecialVar_0x8005 & MULTI_BATTLE_2_VS_WILD) // Player + AI against wild mon
     {
+        BeginNuzlockeWildEncounter();
         gBattleTypeFlags = BATTLE_TYPE_DOUBLE | BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER;
     }
     else if (gSpecialVar_0x8005 & MULTI_BATTLE_2_VS_1) // Player + AI against one trainer
@@ -389,6 +400,7 @@ void BattleSetup_StartMultiBattle(void)
 
 void BattleSetup_StartBattlePikeWildBattle(void)
 {
+    BeginNuzlockeWildEncounter();
     DoBattlePikeWildBattle();
 }
 
@@ -438,6 +450,7 @@ void DoStandardWildBattle_Debug(void)
 
 void BattleSetup_StartRoamerBattle(void)
 {
+    BeginNuzlockeWildEncounter();
     LockPlayerFieldControls();
     FreezeObjectEvents();
     StopPlayerAvatar();
@@ -531,6 +544,7 @@ void StartOldManTutorialBattle(void)
 
 void BattleSetup_StartScriptedWildBattle(void)
 {
+    BeginNuzlockeWildEncounter();
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = 0;
@@ -543,6 +557,7 @@ void BattleSetup_StartScriptedWildBattle(void)
 
 void BattleSetup_StartScriptedDoubleWildBattle(void)
 {
+    BeginNuzlockeWildEncounter();
     LockPlayerFieldControls();
     gMain.savedCallback = CB2_EndScriptedWildBattle;
     gBattleTypeFlags = BATTLE_TYPE_DOUBLE;
@@ -2234,6 +2249,7 @@ void CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Traine
 {
     s32 i;
     u8 monsCount;
+    enum Type trainerTheme = GetGameplayTrainerTheme(trainer);
 
     ZeroPartyMons(party);
 
@@ -2252,7 +2268,21 @@ void CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Traine
     for (i = 0; i < monsCount; i++)
     {
         u32 monIndex = monIndices[i];
-        GenerateMonFromTrainerMon(&party[i], &trainer->party[monIndex], trainerGen);
+        struct TrainerMon trainerMon = trainer->party[monIndex];
+        enum Species originalSpecies = trainerMon.species;
+        enum Type requiredType = trainerTheme == TYPE_NONE ? GetSpeciesType(originalSpecies, 0) : trainerTheme;
+        enum Species randomizedSpecies = GetGameplayTrainerSpecies(originalSpecies, requiredType);
+        if (randomizedSpecies != originalSpecies)
+        {
+            trainerMon.species = randomizedSpecies;
+            trainerMon.nickname = NULL;
+            trainerMon.ability = ABILITY_NONE;
+            trainerMon.gender = TRAINER_MON_RANDOM_GENDER;
+            for (u32 move = 0; move < MAX_MON_MOVES; move++)
+                trainerMon.moves[move] = MOVE_NONE;
+        }
+        GenerateMonFromTrainerMon(&party[i], &trainerMon, trainerGen);
+        ApplyGameplayMonOptions(&party[i], trainerMon.species);
     }
     Free(trainerGen);
 }

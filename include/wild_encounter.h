@@ -66,6 +66,7 @@ bool8 IsAbilityAllowingEncounter(u8 level);
 bool8 TryDoDoubleWildBattle(void);
 u32 CalculateChainFishingShinyRolls(void);
 void CreateWildMon(enum Species species, u8 level);
+void CreateWaterWildMon(enum Species species, u8 level);
 bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum WildPokemonArea area, u8 flags);
 bool8 AreLegendariesInSootopolisPreventingEncounters(void);
 u16 GetCurrentMapWildMonHeaderId(void);

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "battle.h"
 #include "battle_anim.h"
 #include "battle_anim_scripts.h"
@@ -2982,7 +2983,8 @@ bool32 TryFieldEffects(enum FieldEffectCases caseId)
 
 static bool32 IsRestrictedAbility(enum BattlerId battler, enum Ability ability)
 {
-    return GetSpeciesAbility(gBattleMons[battler].species, 0) == ability
+    return GetGameOption(GAME_OPTION_RANDOM_ABILITIES)
+        || GetSpeciesAbility(gBattleMons[battler].species, 0) == ability
         || GetSpeciesAbility(gBattleMons[battler].species, 1) == ability
         || GetSpeciesAbility(gBattleMons[battler].species, 2) == ability;
 }
@@ -9670,10 +9672,7 @@ bool32 MoveEffectIsGuaranteed(enum BattlerId battler, enum Ability battlerAbilit
 
 bool32 IsGen6ExpShareEnabled(void)
 {
-    if (I_EXP_SHARE_FLAG <= TEMP_FLAGS_END)
-        return FALSE;
-
-    return FlagGet(I_EXP_SHARE_FLAG);
+    return GetGameOption(GAME_OPTION_EXP_SHARE);
 }
 
 
@@ -9762,8 +9761,7 @@ bool32 MoveIsAffectedBySheerForce(enum Move move)
 bool32 CanMonParticipateInSkyBattle(struct Pokemon *mon)
 {
     enum Species species = GetMonData(mon, MON_DATA_SPECIES);
-    u32 monAbilityNum = GetMonData(mon, MON_DATA_ABILITY_NUM);
-    enum Ability ability = GetSpeciesAbility(species, monAbilityNum);
+    enum Ability ability = GetMonAbility(mon);
 
     bool32 hasLevitateAbility = (ability == ABILITY_LEVITATE || ability == ABILITY_EELEVATE);
     bool32 isFlyingType = GetSpeciesType(species, 0) == TYPE_FLYING || GetSpeciesType(species, 1) == TYPE_FLYING;

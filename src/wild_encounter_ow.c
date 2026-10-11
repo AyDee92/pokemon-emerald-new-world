@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "wild_encounter_ow.h"
 #include "battle_setup.h"
 #include "battle_main.h"
@@ -241,6 +242,7 @@ void UpdateOverworldWildEncounter(void)
     if (!WE_OW_ENCOUNTERS
      || FlagGet(WE_OWE_FLAG_DISABLED)
      || FlagGet(WE_FLAG_NO_ENCOUNTER)
+     || GetGameOption(GAME_OPTION_INFINITE_REPEL)
      || FlagGet(DN_FLAG_SEARCHING)
      || (gMapHeader.mapLayoutId == LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS && !WE_OWE_BATTLE_PIKE)
      || (gMapHeader.mapLayoutId == LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_FLOOR && !WE_OWE_BATTLE_PYRAMID)
@@ -501,7 +503,7 @@ static bool32 CreateEnemyPartyOWE(struct InfoOWE *info, s32 x, s32 y)
         }
         else if (WE_OWE_FEEBAS_SPOTS && MetatileBehavior_IsWaterWildEncounter(metatileBehavior) && CheckFeebasAtCoords(x, y))
         {
-            CreateWildMon(gWildFeebas.species, ChooseWildMonLevel(&gWildFeebas, 0, WILD_AREA_FISHING));
+            CreateWaterWildMon(gWildFeebas.species, ChooseWildMonLevel(&gWildFeebas, 0, WILD_AREA_FISHING));
             info->category = OWE_CATEGORY_FEEBAS;
             if (WE_OWE_PREVENT_FEEBAS_DESPAWN)
                 info->noDespawn = TRUE;
@@ -869,6 +871,9 @@ static void SetSpeciesInfoForOWE(struct InfoOWE *info, u32 x, u32 y)
     if (info->category == OWE_CATEGORY_UNDEFINED)
         info->category = OWE_CATEGORY_WILD;
 
+    // OWE generation previews use the same encounter constructor as actual battles.
+    // Undo its Nuzlocke reservation here; the area is recorded when the player engages.
+    FinishNuzlockeBattle();
     ZeroEnemyPartyMons();
 }
 
@@ -1704,6 +1709,12 @@ const struct ObjectEventTemplate TryGetObjectEventTemplateForOWE(const struct Ob
     SetSpeciesInfoForOWE(&info, x, y);
     if (speciesTemplate)
         info.speciesId = speciesTemplate;
+
+    // Apply the same generation and randomizer rules to map-placed encounters
+    // as to encounters selected from the route tables. The rewritten species
+    // is stored in the object template, so the visible mon matches its battle.
+    info.speciesId = GetGameplaySpecies(info.speciesId, TYPE_NONE,
+        MetatileBehavior_IsWaterWildEncounter(MapGridGetMetatileBehaviorAt(x, y)));
 
     if (levelTemplate)
         info.level = levelTemplate;

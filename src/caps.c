@@ -2,6 +2,7 @@
 #include "battle.h"
 #include "event_data.h"
 #include "caps.h"
+#include "game_options.h"
 #include "pokemon.h"
 
 
@@ -21,6 +22,9 @@ u32 GetCurrentLevelCap(void)
     };
 
     u32 i;
+
+    if (!GetGameOption(GAME_OPTION_LEVEL_CAP))
+        return MAX_LEVEL;
 
     if (B_LEVEL_CAP_TYPE == LEVEL_CAP_FLAG_LIST)
     {

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "battle.h"
 #include "battle_gfx_sfx_util.h"
 #include "berry.h"
@@ -125,6 +126,7 @@ void CreateScriptedWildMon(enum Species species, u8 level, enum Item item)
     u8 heldItem[2];
 
     ZeroEnemyPartyMons();
+    species = GetGameplaySpecies(species, TYPE_NONE, FALSE);
     u32 personality = GetMonPersonality(species,
         GetSynchronizedGender(STATIC_WILDMON_ORIGIN, species),
         GetSynchronizedNature(STATIC_WILDMON_ORIGIN, species),
@@ -144,6 +146,8 @@ void CreateScriptedDoubleWildMon(enum Species species1, u8 level1, enum Item ite
     u8 heldItem2[2];
 
     ZeroEnemyPartyMons();
+    species1 = GetGameplaySpecies(species1, TYPE_NONE, FALSE);
+    species2 = GetGameplaySpecies(species2, TYPE_NONE, FALSE);
     u32 personality = GetMonPersonality(species1,
         GetSynchronizedGender(STATIC_WILDMON_ORIGIN, species1),
         GetSynchronizedNature(STATIC_WILDMON_ORIGIN, species1),

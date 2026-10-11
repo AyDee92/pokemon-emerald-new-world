@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "malloc.h"
 #include "battle.h"
 #include "battle_anim.h"
@@ -5572,8 +5573,27 @@ void ItemUseCB_TMHM(u8 taskId, TaskFunc task)
 
     PlaySE(SE_SELECT);
     mon = &gParties[B_TRAINER_PLAYER][gPartyMenu.slotId];
-
     GetMonNickname(mon, gStringVar1);
+
+    if (GetGameOption(GAME_OPTION_RANDOM_MOVES))
+    {
+        enum Species species = GetMonData(mon, MON_DATA_SPECIES);
+        enum Move excludedMoves[MAX_MON_MOVES];
+        for (u32 i = 0; i < MAX_MON_MOVES; i++)
+            excludedMoves[i] = GetMonData(mon, MON_DATA_MOVE1 + i);
+        move = GetGameplayRandomMove(species, excludedMoves, MAX_MON_MOVES);
+        gPartyMenu.data1 = move;
+        StringCopy(gStringVar2, GetMoveName(move));
+        if (GiveMoveToMon(mon, move) != MON_HAS_MAX_MOVES)
+            gTasks[taskId].func = Task_LearnedMove;
+        else
+        {
+            DisplayLearnMoveMessage(gText_PkmnNeedsToReplaceMove);
+            gTasks[taskId].func = Task_ReplaceMoveYesNo;
+        }
+        return;
+    }
+
     StringCopy(gStringVar2, GetMoveName(move));
 
     switch (CanTeachMove(mon, move))
@@ -6312,11 +6332,18 @@ void FormChangeTeachMove(u8 taskId, enum Move move, u32 slot)
 {
     struct Pokemon *mon;
 
+    mon = &gParties[B_TRAINER_PLAYER][slot];
+    if (GetGameOption(GAME_OPTION_RANDOM_MOVES))
+    {
+        enum Move excludedMoves[MAX_MON_MOVES];
+        for (u32 i = 0; i < MAX_MON_MOVES; i++)
+            excludedMoves[i] = GetMonData(mon, MON_DATA_MOVE1 + i);
+        move = GetGameplayRandomMove(GetMonData(mon, MON_DATA_SPECIES), excludedMoves, MAX_MON_MOVES);
+    }
     gPartyMenu.data1 = move;
     gPartyMenu.learnMoveState = 0;
 
     PlaySE(SE_SELECT);
-    mon = &gParties[B_TRAINER_PLAYER][slot];
     GetMonNickname(mon, gStringVar1);
     StringCopy(gStringVar2, GetMoveName(move));
 
@@ -7046,15 +7073,24 @@ enum ItemEffectType GetItemEffectType(enum Item item)
 static void TryTutorSelectedMon(u8 taskId)
 {
     struct Pokemon *mon;
+    enum Move move;
 
     if (!gPaletteFade.active)
     {
         mon = &gParties[B_TRAINER_PLAYER][gPartyMenu.slotId];
         GetMonNickname(mon, gStringVar1);
-        gPartyMenu.data1 = gSpecialVar_0x8005;
+        move = gSpecialVar_0x8005;
+        if (GetGameOption(GAME_OPTION_RANDOM_MOVES))
+        {
+            enum Move excludedMoves[MAX_MON_MOVES];
+            for (u32 i = 0; i < MAX_MON_MOVES; i++)
+                excludedMoves[i] = GetMonData(mon, MON_DATA_MOVE1 + i);
+            move = GetGameplayRandomMove(GetMonData(mon, MON_DATA_SPECIES), excludedMoves, MAX_MON_MOVES);
+        }
+        gPartyMenu.data1 = move;
         StringCopy(gStringVar2, GetMoveName(gPartyMenu.data1));
         gPartyMenu.learnMoveState = 2;
-        switch (CanTeachMove(mon, gPartyMenu.data1))
+        switch (GetGameOption(GAME_OPTION_RANDOM_MOVES) ? CAN_LEARN_MOVE : CanTeachMove(mon, gPartyMenu.data1))
         {
         case CANNOT_LEARN_MOVE:
             DisplayLearnMoveMessageAndClose(taskId, gText_PkmnCantLearnMove);

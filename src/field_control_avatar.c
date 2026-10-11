@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "battle_setup.h"
 #include "bike.h"
 #include "coord_event_weather.h"
@@ -96,6 +97,7 @@ void FieldClearPlayerInput(struct FieldInput *input)
     input->tookStep = FALSE;
     input->pressedBButton = FALSE;
     input->pressedRButton = FALSE;
+    input->pressedLButton = FALSE;
     input->input_field_1_1 = FALSE;
     input->input_field_1_2 = FALSE;
     input->input_field_1_3 = FALSE;
@@ -123,6 +125,8 @@ void FieldGetPlayerInput(struct FieldInput *input, u16 newKeys, u16 heldKeys)
             if (newKeys & R_BUTTON)
                 input->pressedRButton = TRUE;
         }
+        if (newKeys & L_BUTTON)
+            input->pressedLButton = TRUE;
 
         if (heldKeys & (DPAD_UP | DPAD_DOWN | DPAD_LEFT | DPAD_RIGHT))
         {
@@ -177,6 +181,12 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
 
     if (TryRunOnFrameMapScript() == TRUE)
         return TRUE;
+
+    if (input->pressedLButton)
+    {
+        OpenFieldOptionsMenu();
+        return TRUE;
+    }
 
     if (input->pressedBButton && TrySetupDiveEmergeScript() == TRUE)
         return TRUE;
@@ -895,7 +905,7 @@ void RestartWildEncounterImmunitySteps(void)
 
 static bool32 ShouldDisableRandomEncounters(void)
 {
-    if (FlagGet(WE_FLAG_NO_ENCOUNTER))
+    if (FlagGet(WE_FLAG_NO_ENCOUNTER) || GetGameOption(GAME_OPTION_INFINITE_REPEL))
         return TRUE;
 
     if (!WE_VANILLA_RANDOM && WE_OW_ENCOUNTERS)

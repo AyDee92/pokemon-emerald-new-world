@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "malloc.h"
 #include "battle.h"
 #include "pokemon.h"
@@ -1850,14 +1851,36 @@ void TryAddPokeballIconToHealthbox(u8 healthboxSpriteId, bool8 noStatus)
         return;
     if (GetBattlerSide(battler) == B_SIDE_OPPONENT && IsGhostBattleWithoutScope())
         return;
-    if (!GetSetPokedexFlag(SpeciesToNationalPokedexNum(GetMonData(GetBattlerMon(battler), MON_DATA_SPECIES)), FLAG_GET_CAUGHT))
-        return;
 
     healthBarSpriteId = gSprites[healthboxSpriteId].hMain_HealthBarSpriteId;
 
-    if (noStatus)
-        CpuCopy32(GetHealthboxElementGfxPtr(HEALTHBOX_GFX_STATUS_BALL_CAUGHT), (void *)(OBJ_VRAM0 + (gSprites[healthBarSpriteId].oam.tileNum + 8) * TILE_SIZE_4BPP), 32);
-    else
+    if (GetSetPokedexFlag(SpeciesToNationalPokedexNum(GetMonData(GetBattlerMon(battler), MON_DATA_SPECIES)), FLAG_GET_CAUGHT))
+    {
+        if (noStatus)
+            CpuCopy32(GetHealthboxElementGfxPtr(HEALTHBOX_GFX_STATUS_BALL_CAUGHT), (void *)(OBJ_VRAM0 + (gSprites[healthBarSpriteId].oam.tileNum + 8) * TILE_SIZE_4BPP), 32);
+        else
+            CpuFill32(0, (void *)(OBJ_VRAM0 + (gSprites[healthBarSpriteId].oam.tileNum + 8) * TILE_SIZE_4BPP), 32);
+        return;
+    }
+
+    if (IsNuzlockeEncounterCatchable(GetMonData(GetBattlerMon(battler), MON_DATA_SPECIES), GetMonData(GetBattlerMon(battler), MON_DATA_IS_SHINY)) && noStatus)
+    {
+        // 8x8 4bpp tile containing a compact, palette-colored "1" marker.
+        static const u8 sCatchableEncounterMarker[] = {
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x02, 0x00,
+            0x00, 0x20, 0x02, 0x00,
+            0x00, 0x00, 0x02, 0x00,
+            0x00, 0x00, 0x02, 0x00,
+            0x00, 0x00, 0x02, 0x00,
+            0x00, 0x22, 0x22, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+        };
+        CpuCopy32(sCatchableEncounterMarker, (void *)(OBJ_VRAM0 + (gSprites[healthBarSpriteId].oam.tileNum + 8) * TILE_SIZE_4BPP), sizeof(sCatchableEncounterMarker));
+        return;
+    }
+
+    if (!noStatus)
         CpuFill32(0, (void *)(OBJ_VRAM0 + (gSprites[healthBarSpriteId].oam.tileNum + 8) * TILE_SIZE_4BPP), 32);
 }
 

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "chooseboxmon.h"
 #include "daycare.h"
 #include "event_data.h"
@@ -240,6 +241,14 @@ static struct BoxPokemon *LearnMove_GetBoxMonFromTaskData(u8 partyIndex)
 s32 LearnMove(const struct MoveLearnUI *ui, u8 taskId)
 {
     struct BoxPokemon *boxmon = LearnMove_GetBoxMonFromTaskData(partyIndex);
+    if (GetGameOption(GAME_OPTION_RANDOM_MOVES)
+     && (state == PROMPT_BEFORE_LEARNING_1 || state == VALIDATE_BEFORE_LEARNING))
+    {
+        enum Move excludedMoves[MAX_MON_MOVES];
+        for (u32 i = 0; i < MAX_MON_MOVES; i++)
+            excludedMoves[i] = GetBoxMonData(boxmon, MON_DATA_MOVE1 + i);
+        move = GetGameplayRandomMove(GetBoxMonData(boxmon, MON_DATA_SPECIES), excludedMoves, MAX_MON_MOVES);
+    }
     switch (state)
     {
     case PROMPT_BEFORE_LEARNING_1:
@@ -260,6 +269,8 @@ s32 LearnMove(const struct MoveLearnUI *ui, u8 taskId)
         GetBoxMonNickname(boxmon, gStringVar1);
         StringCopy(gStringVar2, GetMoveName(move));
         gSpecialVar_Result = FALSE;
+        if (GetGameOption(GAME_OPTION_RANDOM_MOVES))
+            return LEARN_MOVE;
         switch(ChooseBoxMon_CanMonLearnMove(boxmon, move))
         {
         case VALID_MON:

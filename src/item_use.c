@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "item_use.h"
 #include "battle.h"
 #include "battle_anim.h"
@@ -245,7 +246,7 @@ void ItemUseOutOfBattle_Mail(u8 taskId)
     Task_FadeAndCloseBagMenu(taskId);
 }
 
-STATIC_ASSERT(I_EXP_SHARE_ITEM < GEN_6 || I_EXP_SHARE_FLAG > TEMP_FLAGS_END, YouNeedToSetAFlagToUseGen6ExpShare);
+STATIC_ASSERT(I_EXP_SHARE_ITEM < GEN_6 || I_EXP_SHARE_FLAG == 0 || I_EXP_SHARE_FLAG > TEMP_FLAGS_END, YouNeedToSetAFlagToUseGen6ExpShare);
 
 void ItemUseOutOfBattle_ExpShare(u8 taskId)
 {
@@ -266,7 +267,7 @@ void ItemUseOutOfBattle_ExpShare(u8 taskId)
         else
             DisplayItemMessage(taskId, FONT_NORMAL, gText_ExpShareOn, CloseItemMessage);
     }
-    FlagToggle(I_EXP_SHARE_FLAG);
+    SetGameOption(GAME_OPTION_EXP_SHARE, !IsGen6ExpShareEnabled());
 #else
     DisplayDadsAdviceCannotUseItemMessage(taskId, gTasks[taskId].tUsingRegisteredKeyItem);
 #endif
@@ -1128,7 +1129,9 @@ static u32 GetBallThrowableState(void)
         return BALL_THROW_UNABLE_NO_ROOM;
     else if (GetConfig(B_SEMI_INVULNERABLE_CATCH) >= GEN_4 &&  IsSemiInvulnerable(GetCatchingBattler(), CHECK_ALL))
         return BALL_THROW_UNABLE_SEMI_INVULNERABLE;
-    else if (FlagGet(WE_FLAG_NO_CATCHING) || !IsAllowedToUseBag())
+    else if (FlagGet(WE_FLAG_NO_CATCHING)
+          || IsNuzlockeCatchBlocked(GetMonData(GetBattlerMon(GetCatchingBattler()), MON_DATA_SPECIES), GetMonData(GetBattlerMon(GetCatchingBattler()), MON_DATA_IS_SHINY))
+          || !IsAllowedToUseBag())
         return BALL_THROW_UNABLE_DISABLED_FLAG;
 
     return BALL_THROW_ABLE;

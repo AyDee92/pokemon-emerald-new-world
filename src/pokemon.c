@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "malloc.h"
 #include "apprentice.h"
 #include "battle.h"
@@ -1613,6 +1614,14 @@ void GiveBoxMonInitialMoveset(struct BoxPokemon *boxMon) //Credit: AsparagusEdua
             }
         }
     }
+    if (GetGameOption(GAME_OPTION_RANDOM_MOVES))
+    {
+        enum Move randomizedMoves[MAX_MON_MOVES] = {MOVE_NONE};
+
+        for (i = 0; i < addedMoves; i++)
+            randomizedMoves[i] = GetGameplayRandomMove(species, randomizedMoves, i);
+        memcpy(moves, randomizedMoves, sizeof(moves));
+    }
     for (i = 0; i < MAX_MON_MOVES; i++)
     {
         SetBoxMonData(boxMon, MON_DATA_MOVE1 + i, &moves[i]);
@@ -1705,7 +1714,17 @@ enum Move MonTryLearningNewMoveAtLevel(struct Pokemon *mon, bool32 firstMove, u3
 
     if (learnset[sLearningMoveTableID].level == level)
     {
-        gMoveToLearn = learnset[sLearningMoveTableID].move;
+        if (GetGameOption(GAME_OPTION_RANDOM_MOVES))
+        {
+            enum Move excludedMoves[MAX_MON_MOVES];
+            for (u32 i = 0; i < MAX_MON_MOVES; i++)
+                excludedMoves[i] = GetMonData(mon, MON_DATA_MOVE1 + i);
+            gMoveToLearn = GetGameplayRandomMove(species, excludedMoves, MAX_MON_MOVES);
+        }
+        else
+        {
+            gMoveToLearn = learnset[sLearningMoveTableID].move;
+        }
         sLearningMoveTableID++;
         retVal = GiveMoveToMon(mon, gMoveToLearn);
     }
@@ -3106,7 +3125,7 @@ enum Ability GetMonAbility(struct Pokemon *mon)
 {
     enum Species species = GetMonData(mon, MON_DATA_SPECIES);
     u8 abilityNum = GetMonData(mon, MON_DATA_ABILITY_NUM);
-    return GetAbilityBySpecies(species, abilityNum);
+    return GetGameplayAbility(GetMonData(mon, MON_DATA_PERSONALITY), species, abilityNum);
 }
 
 void CreateSecretBaseEnemyParty(struct SecretBase *secretBaseRecord)
@@ -3402,7 +3421,7 @@ void PokemonToBattleMon(struct Pokemon *src, struct BattlePokemon *dst)
     dst->types[2] = TYPE_MYSTERY;
     dst->isShiny = IsMonShiny(src);
     dst->affectionHearts = GetMonAffectionHearts(src);
-    dst->ability = GetAbilityBySpecies(dst->species, dst->abilityNum);
+    dst->ability = GetGameplayAbility(dst->personality, dst->species, dst->abilityNum);
     GetMonData(src, MON_DATA_NICKNAME, nickname);
     StringCopy_Nickname(dst->nickname, nickname);
     GetMonData(src, MON_DATA_OT_NAME, dst->otName);
@@ -5908,7 +5927,7 @@ enum Species GetFormChangeTargetSpeciesBoxMon(struct BoxPokemon *boxMon, enum Fo
         .method = method,
         .currentSpecies = species,
         .heldItem = GetBoxMonData(boxMon, MON_DATA_HELD_ITEM),
-        .ability = GetAbilityBySpecies(species, GetBoxMonData(boxMon, MON_DATA_ABILITY_NUM)),
+        .ability = GetGameplayAbility(GetBoxMonData(boxMon, MON_DATA_PERSONALITY), species, GetBoxMonData(boxMon, MON_DATA_ABILITY_NUM)),
         .partyItemUsed = gSpecialVar_ItemId,
         .multichoiceSelection = gSpecialVar_Result,
         .status = GetBoxMonData(boxMon, MON_DATA_STATUS),
@@ -6195,7 +6214,17 @@ u16 MonTryLearningNewMoveEvolution(struct Pokemon *mon, bool8 firstMove)
         while ((learnset[sLearningMoveTableID].level == 0 || learnset[sLearningMoveTableID].level == level)
              && !(P_EVOLUTION_LEVEL_1_LEARN >= GEN_8 && learnset[sLearningMoveTableID].level == 1))
         {
-            gMoveToLearn = learnset[sLearningMoveTableID].move;
+            if (GetGameOption(GAME_OPTION_RANDOM_MOVES))
+            {
+                enum Move excludedMoves[MAX_MON_MOVES];
+                for (u32 i = 0; i < MAX_MON_MOVES; i++)
+                    excludedMoves[i] = GetMonData(mon, MON_DATA_MOVE1 + i);
+                gMoveToLearn = GetGameplayRandomMove(species, excludedMoves, MAX_MON_MOVES);
+            }
+            else
+            {
+                gMoveToLearn = learnset[sLearningMoveTableID].move;
+            }
             sLearningMoveTableID++;
             return GiveMoveToMon(mon, gMoveToLearn);
         }

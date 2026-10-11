@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "battle.h"
 #include "battle_hold_effects.h"
 #include "battle_message.h"
@@ -1902,6 +1903,9 @@ static void Cmd_tryfaintmon(void)
             }
 
             SetValuesOnFaint(battler);
+            if (GetBattlerSide(battler) == B_SIDE_PLAYER
+             && GetBattlerParty(battler) == &gParties[B_TRAINER_PLAYER][0])
+                MarkNuzlockePartyMonFainted(gBattlerPartyIndexes[battler]);
             BattleScriptPush(cmd->nextInstr);
             gBattlescriptCurrInstr = BattleScript_FaintBattler;
         }
@@ -3239,7 +3243,7 @@ static void Cmd_switchindataupdate(void)
     gBattleMons[battler].types[0] = GetSpeciesType(gBattleMons[battler].species, 0);
     gBattleMons[battler].types[1] = GetSpeciesType(gBattleMons[battler].species, 1);
     gBattleMons[battler].types[2] = TYPE_MYSTERY;
-    gBattleMons[battler].ability = GetAbilityBySpecies(gBattleMons[battler].species, gBattleMons[battler].abilityNum);
+    gBattleMons[battler].ability = GetMonAbility(GetBattlerMon(battler));
     #if TESTING
     if (gTestRunnerEnabled)
     {
@@ -6475,7 +6479,6 @@ static void Cmd_healpartystatus(void)
     for (i = 0; i < PARTY_SIZE; i++)
     {
         enum Species species = GetMonData(&party[i], MON_DATA_SPECIES_OR_EGG);
-        u8 abilityNum = GetMonData(&party[i], MON_DATA_ABILITY_NUM);
 
         if (species != SPECIES_NONE && species != SPECIES_EGG)
         {
@@ -6494,7 +6497,7 @@ static void Cmd_healpartystatus(void)
                 ability = GetBattlerAbility(partner);
             else
             {
-                ability = GetAbilityBySpecies(species, abilityNum);
+                ability = GetMonAbility(&party[i]);
                 #if TESTING
                 if (gTestRunnerEnabled)
                 {
@@ -7554,7 +7557,7 @@ static void Cmd_pickup(void)
             if (lvlDivBy10 > 9)
                 lvlDivBy10 = 9;
 
-            ability = GetSpeciesAbility(species, GetMonData(&gParties[B_TRAINER_PLAYER][i], MON_DATA_ABILITY_NUM));
+            ability = GetMonAbility(&gParties[B_TRAINER_PLAYER][i]);
 
             if (ability == ABILITY_PICKUP
                 && species != SPECIES_NONE
@@ -8250,6 +8253,16 @@ static void Cmd_handleballthrow(void)
         MarkBattlerForControllerExec(gBattlerAttacker);
         gBattlescriptCurrInstr = BattleScript_WallyBallThrow;
     }
+    else if (IsNuzlockeCatchBlocked(GetMonData(GetBattlerMon(gBattlerTarget), MON_DATA_SPECIES), GetMonData(GetBattlerMon(gBattlerTarget), MON_DATA_IS_SHINY)))
+    {
+        gBallToDisplay = gLastThrownBall = gLastUsedItem;
+        gBattleSpritesDataPtr->animationData->isCriticalCapture = FALSE;
+        gBattleSpritesDataPtr->animationData->criticalCaptureSuccess = FALSE;
+        gBattleCommunication[MULTISTRING_CHOOSER] = BALL_NO_SHAKES;
+        BtlController_EmitBallThrowAnim(gBattlerAttacker, B_COMM_TO_CONTROLLER, BALL_NO_SHAKES);
+        MarkBattlerForControllerExec(gBattlerAttacker);
+        gBattlescriptCurrInstr = BattleScript_ShakeBallThrow;
+    }
     else
     {
         SetBallThrowShakes();
@@ -8367,6 +8380,8 @@ static void Cmd_givecaughtmon(void)
             if (lostItem != ITEM_NONE && GetItemPocket(lostItem) != POCKET_BERRIES)
                 SetMonData(caughtMon, MON_DATA_HELD_ITEM, &lostItem);  // Restore non-berry items
         }
+
+        MarkNuzlockeEncounterCaught();
 
         u32 emptySlot;
         for (emptySlot = 0; emptySlot < PARTY_SIZE; emptySlot++)
@@ -9271,6 +9286,10 @@ void ApplyExperienceMultipliers(s32 *expAmount, u8 expGetterMonId, u8 faintedBat
         *expAmount = (*expAmount * 4915) / 4096;
     if (CheckBagHasItem(ITEM_EXP_CHARM, 1)) //is also for other exp boosting Powers if/when implemented
         *expAmount = (*expAmount * 150) / 100;
+    if (GetGameOption(GAME_OPTION_EXP_MULTIPLIER) == 1)
+        *expAmount *= 2;
+    else if (GetGameOption(GAME_OPTION_EXP_MULTIPLIER) == 2)
+        *expAmount *= 100;
     if (GetConfig(B_SCALED_EXP) >= GEN_5 && GetConfig(B_SCALED_EXP) != GEN_6)
     {
         // Note: There is an edge case where if a Pokémon receives a large amount of exp, it wouldn't be properly calculated
@@ -9982,17 +10001,15 @@ static void UpdatePokeFlutePartyStatus(struct Pokemon* party, enum BattlerPositi
     enum BattlerId battler;
     u32 monToCheck, status;
     enum Species species;
-    u16 abilityNum;
     monToCheck = 0;
     for (i = 0; i < PARTY_SIZE; i++)
     {
         species = GetMonData(&party[i], MON_DATA_SPECIES_OR_EGG);
-        abilityNum = GetMonData(&party[i], MON_DATA_ABILITY_NUM);
         status = GetMonData(&party[i], MON_DATA_STATUS);
         if (species != SPECIES_NONE
             && species != SPECIES_EGG
             && status & AILMENT_FNT
-            && GetAbilityBySpecies(species, abilityNum) != ABILITY_SOUNDPROOF)
+            && GetMonAbility(&party[i]) != ABILITY_SOUNDPROOF)
             monToCheck |= (1 << i);
     }
     if (monToCheck)

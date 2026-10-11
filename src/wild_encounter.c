@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "battle_setup.h"
 #include "battle_pike.h"
 #include "battle_pyramid.h"
@@ -510,12 +511,24 @@ static u8 PickWildMonNature(enum Species species)
     return GetSynchronizedNature(WILDMON_ORIGIN, species);
 }
 
-void CreateWildMon(enum Species species, u8 level)
+static enum Species CreateWildMonWithOptions(enum Species species, u8 level, bool8 waterOnly)
 {
+    species = GetGameplaySpecies(species, TYPE_NONE, waterOnly || gIsSurfingEncounter || gIsFishingEncounter);
     ZeroEnemyPartyMons();
     u32 personality = GetMonPersonality(species, GetSynchronizedGender(WILDMON_ORIGIN, species), PickWildMonNature(species), RANDOM_UNOWN_LETTER);
     CreateMonWithIVs(&gParties[B_TRAINER_OPPONENT_A][0], species, level, personality, OTID_STRUCT_PLAYER_ID, USE_RANDOM_IVS);
     GiveMonInitialMoveset(&gParties[B_TRAINER_OPPONENT_A][0]);
+    return species;
+}
+
+void CreateWildMon(enum Species species, u8 level)
+{
+    CreateWildMonWithOptions(species, level, FALSE);
+}
+
+void CreateWaterWildMon(enum Species species, u8 level)
+{
+    CreateWildMonWithOptions(species, level, TRUE);
 }
 
 #ifdef BUGFIX
@@ -578,7 +591,7 @@ bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum WildPok
     if (gMapHeader.mapLayoutId != LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS && flags & WILD_CHECK_KEEN_EYE && !IsAbilityAllowingEncounter(level))
         return FALSE;
 
-    CreateWildMon(wildMonInfo->wildPokemon[wildMonIndex].species, level);
+    CreateWildMonWithOptions(wildMonInfo->wildPokemon[wildMonIndex].species, level, area == WILD_AREA_WATER);
     return TRUE;
 }
 
@@ -589,8 +602,7 @@ static u16 GenerateFishingWildMon(const struct WildPokemonInfo *wildMonInfo, u8 
     u8 level = ChooseWildMonLevel(wildMonInfo->wildPokemon, wildMonIndex, WILD_AREA_FISHING);
 
     UpdateChainFishingStreak();
-    CreateWildMon(wildMonSpecies, level);
-    return wildMonSpecies;
+    return CreateWildMonWithOptions(wildMonSpecies, level, TRUE);
 }
 
 static bool8 EncounterOddsCheck(u16 encounterRate)
@@ -957,7 +969,7 @@ void FishingWildEncounter(u8 rod)
         u8 level = ChooseWildMonLevel(&gWildFeebas, 0, WILD_AREA_FISHING);
 
         species = gWildFeebas.species;
-        CreateWildMon(species, level);
+        species = CreateWildMonWithOptions(species, level, TRUE);
     }
     else
     {
