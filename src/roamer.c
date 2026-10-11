@@ -1,5 +1,6 @@
 #include "global.h"
 #include "event_data.h"
+#include "game_options.h"
 #include "ow_abilities.h"
 #include "pokemon.h"
 #include "random.h"
@@ -100,6 +101,7 @@ void MoveAllRoamers(void)
 
 static void CreateInitialRoamerMon(u8 index, enum Species species, u8 level)
 {
+    species = GetGameplaySpecies(species, TYPE_NONE, FALSE);
     ClearRoamerLocationHistory(index);
     u32 personality = GetMonPersonality(species,
         GetSynchronizedGender(ROAMER_ORIGIN, species),

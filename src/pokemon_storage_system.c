@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "malloc.h"
 #include "bg.h"
 #include "data.h"
@@ -1418,6 +1419,7 @@ u8 CountPartyAliveNonEggMonsExcept(u8 slotToIgnore)
         if (i != slotToIgnore
             && GetMonData(&gParties[B_TRAINER_PLAYER][i], MON_DATA_SPECIES) != SPECIES_NONE
             && !GetMonData(&gParties[B_TRAINER_PLAYER][i], MON_DATA_IS_EGG)
+            && !IsNuzlockePokemonRetired(&gParties[B_TRAINER_PLAYER][i])
             && GetMonData(&gParties[B_TRAINER_PLAYER][i], MON_DATA_HP) != 0)
         {
             count++;

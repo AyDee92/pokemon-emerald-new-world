@@ -1,4 +1,5 @@
 #include "global.h"
+#include "game_options.h"
 #include "battle.h"
 #include "battle_ai_main.h"
 #include "battle_ai_util.h"
@@ -415,7 +416,8 @@ bool32 IsValidForBattle(struct Pokemon *mon)
     return (species != SPECIES_NONE
          && species != SPECIES_EGG
          && GetMonData(mon, MON_DATA_HP) != 0
-         && GetMonData(mon, MON_DATA_IS_EGG) == FALSE);
+         && GetMonData(mon, MON_DATA_IS_EGG) == FALSE
+         && !IsNuzlockePokemonRetired(mon));
 }
 
 bool32 IsValidForBattleButDead(struct Pokemon *mon)
@@ -423,7 +425,8 @@ bool32 IsValidForBattleButDead(struct Pokemon *mon)
     enum Species species = GetMonData(mon, MON_DATA_SPECIES_OR_EGG);
     return (species != SPECIES_NONE
          && species != SPECIES_EGG
-         && GetMonData(mon, MON_DATA_IS_EGG) == FALSE);
+         && GetMonData(mon, MON_DATA_IS_EGG) == FALSE
+         && !IsNuzlockePokemonRetired(mon));
 }
 
 static inline bool32 IsControllerPlayer(enum BattlerId battler)

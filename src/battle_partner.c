@@ -2,6 +2,7 @@
 #include "main.h"
 #include "battle.h"
 #include "battle_partner.h"
+#include "game_options.h"
 #include "battle_frontier.h"
 #include "data.h"
 #include "frontier_util.h"
@@ -42,9 +43,23 @@ void FillPartnerParty(u16 trainerId)
         MakePartnerGenerator(&partnerGen, partner);
         if (trainerId == TRAINER_PARTNER(PARTNER_STEVEN))
             partnerGen.otID = OTID_STRUCT_PRESET(STEVEN_OTID);
+        enum Type trainerTheme = GetGameplayTrainerTheme(partner);
         for (i = 0; i < lastIndex && i < partner->partySize; i++)
         {
-            GenerateMonFromTrainerMon(&gParties[B_TRAINER_PARTNER][i], &partner->party[i], &partnerGen);
+            struct TrainerMon trainerMon = partner->party[i];
+            enum Type requiredType = trainerTheme == TYPE_NONE ? GetSpeciesType(trainerMon.species, 0) : trainerTheme;
+            enum Species randomizedSpecies = GetGameplayTrainerSpecies(trainerMon.species, requiredType);
+            if (randomizedSpecies != trainerMon.species)
+            {
+                trainerMon.species = randomizedSpecies;
+                trainerMon.nickname = NULL;
+                trainerMon.ability = ABILITY_NONE;
+                trainerMon.gender = TRAINER_MON_RANDOM_GENDER;
+                for (u32 move = 0; move < MAX_MON_MOVES; move++)
+                    trainerMon.moves[move] = MOVE_NONE;
+            }
+            GenerateMonFromTrainerMon(&gParties[B_TRAINER_PARTNER][i], &trainerMon, &partnerGen);
+            ApplyGameplayMonOptions(&gParties[B_TRAINER_PARTNER][i], trainerMon.species);
         }
     }
     else if (trainerId == TRAINER_EREADER)
