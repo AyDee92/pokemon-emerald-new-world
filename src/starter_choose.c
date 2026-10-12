@@ -3,6 +3,7 @@
 #include "data.h"
 #include "decompress.h"
 #include "event_data.h"
+#include "game_options.h"
 #include "gpu_regs.h"
 #include "international_string_util.h"
 #include "main.h"
@@ -10,6 +11,7 @@
 #include "palette.h"
 #include "pokedex.h"
 #include "pokemon.h"
+#include "random.h"
 #include "scanline_effect.h"
 #include "sound.h"
 #include "sprite.h"
@@ -110,16 +112,38 @@ static const u8 sStarterLabelCoords[STARTER_MON_COUNT][2] =
     {8, 4},
 };
 
-#define GRASS_STARTER (IS_FRLG ? SPECIES_BULBASAUR  : SPECIES_TREECKO)
-#define FIRE_STARTER  (IS_FRLG ? SPECIES_CHARMANDER : SPECIES_TORCHIC)
-#define WATER_STARTER (IS_FRLG ? SPECIES_SQUIRTLE   : SPECIES_MUDKIP )
-
-static const u16 sStarterMon[STARTER_MON_COUNT] =
+static const u16 sStarterMonsByGeneration[9][STARTER_MON_COUNT] =
 {
-    GRASS_STARTER,
-    FIRE_STARTER,
-    WATER_STARTER,
+    {SPECIES_BULBASAUR, SPECIES_CHARMANDER, SPECIES_SQUIRTLE},
+    {SPECIES_CHIKORITA, SPECIES_CYNDAQUIL, SPECIES_TOTODILE},
+    {SPECIES_TREECKO, SPECIES_TORCHIC, SPECIES_MUDKIP},
+    {SPECIES_TURTWIG, SPECIES_CHIMCHAR, SPECIES_PIPLUP},
+    {SPECIES_SNIVY, SPECIES_TEPIG, SPECIES_OSHAWOTT},
+    {SPECIES_CHESPIN, SPECIES_FENNEKIN, SPECIES_FROAKIE},
+    {SPECIES_ROWLET, SPECIES_LITTEN, SPECIES_POPPLIO},
+    {SPECIES_GROOKEY, SPECIES_SCORBUNNY, SPECIES_SOBBLE},
+    {SPECIES_SPRIGATITO, SPECIES_FUECOCO, SPECIES_QUAXLY},
 };
+
+static EWRAM_DATA u16 sSelectedStarterMons[STARTER_MON_COUNT];
+static EWRAM_DATA bool8 sStarterMonsInitialized;
+
+static void InitializeSelectedStarterMons(void)
+{
+    u8 generation = GetGameOption(GAME_OPTION_GENERATION);
+
+    if (generation == 0 || generation > ARRAY_COUNT(sStarterMonsByGeneration))
+    {
+        for (u8 starter = 0; starter < STARTER_MON_COUNT; starter++)
+            sSelectedStarterMons[starter] = sStarterMonsByGeneration[Random() % ARRAY_COUNT(sStarterMonsByGeneration)][starter];
+    }
+    else
+    {
+        for (u8 starter = 0; starter < STARTER_MON_COUNT; starter++)
+            sSelectedStarterMons[starter] = sStarterMonsByGeneration[generation - 1][starter];
+    }
+    sStarterMonsInitialized = TRUE;
+}
 
 static const struct BgTemplate sBgTemplates[3] =
 {
@@ -349,9 +373,11 @@ static const struct SpriteTemplate sSpriteTemplate_StarterCircle =
 // .text
 u16 GetStarterPokemon(u16 chosenStarterId)
 {
-    if (chosenStarterId > STARTER_MON_COUNT)
+    if (chosenStarterId >= STARTER_MON_COUNT)
         chosenStarterId = 0;
-    return sStarterMon[chosenStarterId];
+    if (!sStarterMonsInitialized)
+        InitializeSelectedStarterMons();
+    return sSelectedStarterMons[chosenStarterId];
 }
 
 static void VblankCB_StarterChoose(void)
@@ -376,6 +402,8 @@ void CB2_ChooseStarter(void)
     u8 spriteId;
 
     SetVBlankCallback(NULL);
+    sStarterMonsInitialized = FALSE;
+    InitializeSelectedStarterMons();
 
     SetGpuReg(REG_OFFSET_DISPCNT, 0);
     SetGpuReg(REG_OFFSET_BG3CNT, 0);

@@ -1865,15 +1865,16 @@ void TryAddPokeballIconToHealthbox(u8 healthboxSpriteId, bool8 noStatus)
 
     if (IsNuzlockeEncounterCatchable(GetMonData(GetBattlerMon(battler), MON_DATA_SPECIES), GetMonData(GetBattlerMon(battler), MON_DATA_IS_SHINY)) && noStatus)
     {
-        // 8x8 4bpp tile containing a compact, palette-colored "1" marker.
-        static const u8 sCatchableEncounterMarker[] = {
+        // 8x8 4bpp tile containing a red "1" with a dark outline. Palette
+        // index 14 is red and index 1 is the darkest opaque healthbox color.
+        static const u8 ALIGNED(4) sCatchableEncounterMarker[] = {
             0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x02, 0x00,
-            0x00, 0x20, 0x02, 0x00,
-            0x00, 0x00, 0x02, 0x00,
-            0x00, 0x00, 0x02, 0x00,
-            0x00, 0x00, 0x02, 0x00,
-            0x00, 0x22, 0x22, 0x00,
+            0x00, 0x10, 0x1E, 0x00,
+            0x00, 0xE1, 0x1E, 0x00,
+            0x00, 0x10, 0x1E, 0x00,
+            0x00, 0x10, 0x1E, 0x00,
+            0x00, 0x10, 0x1E, 0x00,
+            0x00, 0xE1, 0xEE, 0x01,
             0x00, 0x00, 0x00, 0x00,
         };
         CpuCopy32(sCatchableEncounterMarker, (void *)(OBJ_VRAM0 + (gSprites[healthBarSpriteId].oam.tileNum + 8) * TILE_SIZE_4BPP), sizeof(sCatchableEncounterMarker));

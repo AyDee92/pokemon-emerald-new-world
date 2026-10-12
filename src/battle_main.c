@@ -5413,7 +5413,7 @@ static void WaitForEvoSceneToFinish(void)
 
 static void ReturnFromBattleToOverworld(void)
 {
-    if (GetGameOption(GAME_OPTION_NUZLOCKE))
+    if (IsNuzlockeChallengeActive())
     {
         u8 partyCount = CalculatePlayerPartyCount();
         for (u8 i = partyCount; i > 0; i--)

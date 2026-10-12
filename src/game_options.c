@@ -5,9 +5,13 @@
 #include "field_player_avatar.h"
 #include "game_options.h"
 #include "link.h"
+#include "main.h"
 #include "pokemon.h"
 #include "pokedex.h"
+#include "palette.h"
 #include "random.h"
+#include "script.h"
+#include "string_util.h"
 #include "trainer.h"
 #include "menu.h"
 #include "move.h"
@@ -16,8 +20,12 @@
 #include "sound.h"
 #include "strings.h"
 #include "text.h"
+#include "text_window.h"
 #include "window.h"
 #include "wild_encounter.h"
+#include "constants/map_groups.h"
+#include "constants/songs.h"
+#include "data/map_group_count.h"
 
 enum
 {
@@ -46,6 +54,7 @@ enum
 #define OPTION_SHIFT_PC_ANYWHERE         15
 #define OPTION_SHIFT_EXP_SHARE           16
 #define GAMEPLAY_OPTIONS_SIGNATURE       0x47504F54 // "GPOT"
+#define GAMEPLAY_OPTIONS_NUZLOCKE_STARTED (1u << 17)
 
 static const struct WindowTemplate sGameOptionsWindowTemplate =
 {
@@ -55,7 +64,20 @@ static const struct WindowTemplate sGameOptionsWindowTemplate =
     .width = 28,
     .height = 19,
     .paletteNum = 15,
-    .baseBlock = 0x200,
+    // Stay within BG0's tile range. 0x200 was beyond the 10-bit tile index
+    // space once the 28x19 window was added and corrupted the bottom of the UI.
+    .baseBlock = 0x139,
+};
+
+static const struct WindowTemplate sFieldOptionsWindowTemplate =
+{
+    .bg = 0,
+    .tilemapLeft = 1,
+    .tilemapTop = 1,
+    .width = 18,
+    .height = 8,
+    .paletteNum = 15,
+    .baseBlock = 0x139,
 };
 
 static const u8 sText_GameOptionsTitle[] = _("GAME SETTINGS");
@@ -77,6 +99,8 @@ static const u8 sText_GameOptionsPc[] = _("Access PC");
 static const u8 sText_GameOptionsExpShare[] = _("Exp. Share");
 static const u8 sText_Off[] = _("Off");
 static const u8 sText_On[] = _("On");
+static const u8 sText_OffGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}Off");
+static const u8 sText_OnGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}On");
 static const u8 sText_AllGenerations[] = _("All");
 static const u8 sText_Generation[] = _("Gen {STR_VAR_1}");
 static const u8 sText_RandomScaled[] = _("Scaled");
@@ -84,6 +108,13 @@ static const u8 sText_RandomTyped[] = _("Typed");
 static const u8 sText_ExpOne[] = _("1x");
 static const u8 sText_ExpTwo[] = _("2x");
 static const u8 sText_ExpHundred[] = _("100x");
+static const u8 sText_AllGenerationsGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}All");
+static const u8 sText_GenerationGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}Gen {STR_VAR_1}");
+static const u8 sText_RandomScaledGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}Scaled");
+static const u8 sText_RandomTypedGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}Typed");
+static const u8 sText_ExpOneGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}1x");
+static const u8 sText_ExpTwoGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}2x");
+static const u8 sText_ExpHundredGreen[] = _("{COLOR GREEN}{SHADOW LIGHT_GREEN}100x");
 
 static const u8 *const sGameOptionsPage1[] =
 {
@@ -100,7 +131,6 @@ static const u8 *const sGameOptionsPage1[] =
 static const u8 *const sGameOptionsPage2[] =
 {
     sText_GameOptionsRepel,
-    sText_GameOptionsPc,
     sText_GameOptionsExpShare,
 };
 
@@ -119,26 +149,24 @@ static const enum GameOptionId sGameOptionsPage1Ids[] =
 static const enum GameOptionId sGameOptionsPage2Ids[] =
 {
     GAME_OPTION_INFINITE_REPEL,
-    GAME_OPTION_PC_ANYWHERE,
     GAME_OPTION_EXP_SHARE,
 };
 
 static const u8 *const sOnOffValues[] = {sText_Off, sText_On};
-static u8 sGameOptionsWindowId;
-static TaskFunc sGameOptionsNextFunc;
-static bool8 sGameOptionsInField;
-static bool8 sOpenPcOnClose;
-static bool8 sNuzlockeEncounterPending;
-static bool8 sNuzlockeAreaWasUsed;
-static bool8 sNuzlockeEncounterCaught;
-static u8 sNuzlockeFaintedPartySlots;
-static bool8 sGameplaySpeciesCandidatesInitialized;
-static bool8 sGameplaySpeciesCandidates[NUM_SPECIES];
+static EWRAM_DATA u8 sGameOptionsWindowId;
+static EWRAM_DATA TaskFunc sGameOptionsNextFunc;
+static EWRAM_DATA bool8 sGameOptionsInField;
+static EWRAM_DATA bool8 sOpenPcOnClose;
+static EWRAM_DATA bool8 sNuzlockeEncounterPending;
+static EWRAM_DATA bool8 sNuzlockeAreaWasUsed;
+static EWRAM_DATA bool8 sNuzlockeEncounterCaught;
+static EWRAM_DATA u8 sNuzlockeFaintedPartySlots;
+static EWRAM_DATA bool8 sGameplaySpeciesCandidatesInitialized;
+static EWRAM_DATA bool8 sGameplaySpeciesCandidates[NUM_SPECIES];
+static EWRAM_DATA bool8 sGameplaySpeciesSeenNationalDex[NATIONAL_DEX_COUNT + 1];
 
 static void InitGameplaySpeciesCandidates(void)
 {
-    static bool8 seenNationalDex[NATIONAL_DEX_COUNT + 1];
-
     if (sGameplaySpeciesCandidatesInitialized)
         return;
 
@@ -153,9 +181,9 @@ static void InitGameplaySpeciesCandidates(void)
             continue;
         if (!isRegionalForm)
         {
-            if (dexNum > NATIONAL_DEX_COUNT || seenNationalDex[dexNum])
+            if (dexNum > NATIONAL_DEX_COUNT || sGameplaySpeciesSeenNationalDex[dexNum])
                 continue;
-            seenNationalDex[dexNum] = TRUE;
+            sGameplaySpeciesSeenNationalDex[dexNum] = TRUE;
         }
         sGameplaySpeciesCandidates[species] = TRUE;
     }
@@ -214,6 +242,24 @@ void SetGameOption(enum GameOptionId option, u8 value)
         gSaveBlock2Ptr->gameplayOptions.settings = 0;
     gSaveBlock2Ptr->gameplayOptions.signature = GAMEPLAY_OPTIONS_SIGNATURE;
     gSaveBlock2Ptr->gameplayOptions.settings = (gSaveBlock2Ptr->gameplayOptions.settings & ~(mask << shift)) | ((value & mask) << shift);
+}
+
+bool8 IsNuzlockeChallengeActive(void)
+{
+    return GetGameOption(GAME_OPTION_NUZLOCKE)
+        && (gSaveBlock2Ptr->gameplayOptions.settings & GAMEPLAY_OPTIONS_NUZLOCKE_STARTED);
+}
+
+void ActivateNuzlockeChallenge(void)
+{
+    if (!GetGameOption(GAME_OPTION_NUZLOCKE) || IsNuzlockeChallengeActive())
+        return;
+
+    gSaveBlock2Ptr->gameplayOptions.settings |= GAMEPLAY_OPTIONS_NUZLOCKE_STARTED;
+    sNuzlockeEncounterPending = FALSE;
+    sNuzlockeAreaWasUsed = FALSE;
+    sNuzlockeEncounterCaught = FALSE;
+    sNuzlockeFaintedPartySlots = 0;
 }
 
 static u8 GetOptionValueCount(enum GameOptionId option)
@@ -397,7 +443,7 @@ void BeginNuzlockeWildEncounter(void)
     bool8 hasNewSpecies = FALSE;
     u8 mask;
 
-    if (!GetGameOption(GAME_OPTION_NUZLOCKE) || sNuzlockeEncounterPending)
+    if (!IsNuzlockeChallengeActive() || sNuzlockeEncounterPending)
         return;
     if (mapGroup >= ARRAY_COUNT(MAP_GROUP_COUNT) || mapNum >= MAP_GROUP_COUNT[mapGroup])
         return;
@@ -429,7 +475,7 @@ void BeginNuzlockeWildEncounter(void)
 
 bool8 IsNuzlockeCatchBlocked(enum Species species, bool8 isShiny)
 {
-    if (!GetGameOption(GAME_OPTION_NUZLOCKE) || isShiny)
+    if (!IsNuzlockeChallengeActive() || isShiny)
         return FALSE;
     return sNuzlockeEncounterCaught
         || sNuzlockeAreaWasUsed
@@ -438,20 +484,20 @@ bool8 IsNuzlockeCatchBlocked(enum Species species, bool8 isShiny)
 
 bool8 IsNuzlockeEncounterCatchable(enum Species species, bool8 isShiny)
 {
-    return GetGameOption(GAME_OPTION_NUZLOCKE)
+    return IsNuzlockeChallengeActive()
         && sNuzlockeEncounterPending
         && !IsNuzlockeCatchBlocked(species, isShiny);
 }
 
 void MarkNuzlockeEncounterCaught(void)
 {
-    if (GetGameOption(GAME_OPTION_NUZLOCKE) && sNuzlockeEncounterPending)
+    if (IsNuzlockeChallengeActive() && sNuzlockeEncounterPending)
         sNuzlockeEncounterCaught = TRUE;
 }
 
 void MarkNuzlockePartyMonFainted(u8 partyIndex)
 {
-    if (GetGameOption(GAME_OPTION_NUZLOCKE) && partyIndex < PARTY_SIZE)
+    if (IsNuzlockeChallengeActive() && partyIndex < PARTY_SIZE)
         sNuzlockeFaintedPartySlots |= 1 << partyIndex;
 }
 
@@ -512,7 +558,7 @@ static enum Move ChooseRandomMove(enum Species species, bool8 preferType, const 
     enum Type primaryType = GetSpeciesType(species, 0);
     enum Type secondaryType = GetSpeciesType(species, 1);
 
-    for (enum Move move = MOVE_NONE + 1; move < NUM_MOVES; move++)
+    for (enum Move move = MOVE_NONE + 1; move < MOVES_COUNT_ALL; move++)
     {
         if (move == MOVE_STRUGGLE || IsMoveAlreadyChosen(chosenMoves, move, chosenCount))
             continue;
@@ -610,18 +656,21 @@ static const u8 *GetOptionValueText(enum GameOptionId option)
     {
     case GAME_OPTION_GENERATION:
         if (value == 0)
-            return sText_AllGenerations;
+            return sGameOptionsInField ? sText_AllGenerations : sText_AllGenerationsGreen;
         ConvertIntToDecimalStringN(gStringVar1, value, STR_CONV_MODE_LEFT_ALIGN, 1);
-        StringExpandPlaceholders(gStringVar4, sText_Generation);
+        StringExpandPlaceholders(gStringVar4, sGameOptionsInField ? sText_Generation : sText_GenerationGreen);
         return gStringVar4;
     case GAME_OPTION_RANDOM_POKEMON:
-        return value == 0 ? sText_Off : (value == 1 ? sText_On : sText_RandomScaled);
+        return value == 0 ? (sGameOptionsInField ? sText_Off : sText_OffGreen)
+            : (value == 1 ? (sGameOptionsInField ? sText_On : sText_OnGreen) : (sGameOptionsInField ? sText_RandomScaled : sText_RandomScaledGreen));
     case GAME_OPTION_RANDOM_MOVES:
-        return value == 0 ? sText_Off : (value == 1 ? sText_On : sText_RandomTyped);
+        return value == 0 ? (sGameOptionsInField ? sText_Off : sText_OffGreen)
+            : (value == 1 ? (sGameOptionsInField ? sText_On : sText_OnGreen) : (sGameOptionsInField ? sText_RandomTyped : sText_RandomTypedGreen));
     case GAME_OPTION_EXP_MULTIPLIER:
-        return value == 0 ? sText_ExpOne : (value == 1 ? sText_ExpTwo : sText_ExpHundred);
+        return value == 0 ? (sGameOptionsInField ? sText_ExpOne : sText_ExpOneGreen)
+            : (value == 1 ? (sGameOptionsInField ? sText_ExpTwo : sText_ExpTwoGreen) : (sGameOptionsInField ? sText_ExpHundred : sText_ExpHundredGreen));
     default:
-        return value ? sText_On : sText_Off;
+        return sGameOptionsInField ? (value ? sText_OnGreen : sText_Off) : (value ? sText_OnGreen : sText_OffGreen);
     }
 }
 
@@ -640,7 +689,7 @@ static void PrintGameOptions(u8 taskId)
     if (gTasks[taskId].data[3])
     {
         AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, sText_NuzlockeRules, 16, 42, TEXT_SKIP_DRAW, NULL);
-        AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, sText_NuzlockeRulesHint, 20, 142, TEXT_SKIP_DRAW, NULL);
+        AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, sText_NuzlockeRulesHint, 20, 110, TEXT_SKIP_DRAW, NULL);
         CopyWindowToVram(sGameOptionsWindowId, COPYWIN_FULL);
         return;
     }
@@ -661,27 +710,54 @@ static void PrintGameOptions(u8 taskId)
 
     for (i = 0; i < count; i++)
     {
-        u8 y = 34 + i * 13;
+        u8 y = 30 + i * 12;
         if (i == cursor)
             AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, gText_SelectorArrow, 5, y, TEXT_SKIP_DRAW, NULL);
         AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, labels[i], 20, y, TEXT_SKIP_DRAW, NULL);
         AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, GetOptionValueText(optionIds[i]), 196, y, TEXT_SKIP_DRAW, NULL);
     }
 
-    AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, sText_GameOptionsHint, 22, 142, TEXT_SKIP_DRAW, NULL);
+    AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, sText_GameOptionsHint, 22, 128, TEXT_SKIP_DRAW, NULL);
+    CopyWindowToVram(sGameOptionsWindowId, COPYWIN_FULL);
+}
+
+static void PrintFieldOptions(u8 taskId)
+{
+    static const u8 *const labels[] =
+    {
+        sText_GameOptionsRepel,
+        sText_GameOptionsPc,
+        sText_GameOptionsExpShare,
+    };
+    u8 cursor = gTasks[taskId].data[2];
+
+    FillWindowPixelBuffer(sGameOptionsWindowId, PIXEL_FILL(1));
+    DrawStdWindowFrame(sGameOptionsWindowId, FALSE);
+    for (u8 i = 0; i < ARRAY_COUNT(labels); i++)
+    {
+        u8 y = 9 + i * 16;
+        if (i == cursor)
+            AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, gText_SelectorArrow, 0, y, TEXT_SKIP_DRAW, NULL);
+        AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, labels[i], 8, y, TEXT_SKIP_DRAW, NULL);
+        if (i != 1)
+        {
+            enum GameOptionId option = i == 0 ? GAME_OPTION_INFINITE_REPEL : GAME_OPTION_EXP_SHARE;
+            AddTextPrinterParameterized(sGameOptionsWindowId, FONT_NORMAL, GetOptionValueText(option), 116, y, TEXT_SKIP_DRAW, NULL);
+        }
+    }
     CopyWindowToVram(sGameOptionsWindowId, COPYWIN_FULL);
 }
 
 static void CloseGameOptionsMenu(u8 taskId)
 {
-    ClearWindowTilemap(sGameOptionsWindowId);
-    CopyWindowToVram(sGameOptionsWindowId, COPYWIN_MAP);
+    // Clear both the standard frame and the window contents before freeing its
+    // tile allocation, otherwise the border remains visible on the field.
+    ClearStdWindowAndFrame(sGameOptionsWindowId, TRUE);
     RemoveWindow(sGameOptionsWindowId);
     CopyBgTilemapBufferToVram(0);
     if (sGameOptionsInField)
     {
         UnlockPlayerFieldControls();
-        PlayerUnfreeze();
         UnfreezeObjectEvents();
         DestroyTask(taskId);
         if (sOpenPcOnClose)
@@ -705,10 +781,13 @@ static void Task_GameOptionsMenu(u8 taskId)
     if (gTasks[taskId].data[0] == 0)
     {
         LoadMessageBoxGfx(0, 0xF3, BG_PLTT_ID(15));
-        sGameOptionsWindowId = AddWindow(&sGameOptionsWindowTemplate);
+        sGameOptionsWindowId = AddWindow(sGameOptionsInField ? &sFieldOptionsWindowTemplate : &sGameOptionsWindowTemplate);
         PutWindowTilemap(sGameOptionsWindowId);
         gTasks[taskId].data[0] = 1;
-        PrintGameOptions(taskId);
+        if (sGameOptionsInField)
+            PrintFieldOptions(taskId);
+        else
+            PrintGameOptions(taskId);
         return;
     }
 
@@ -725,37 +804,65 @@ static void Task_GameOptionsMenu(u8 taskId)
 
     if (JOY_NEW(DPAD_UP))
     {
-        u8 rows = gTasks[taskId].data[1] == 0 ? ARRAY_COUNT(sGameOptionsPage1Ids) : ARRAY_COUNT(sGameOptionsPage2Ids);
+        u8 rows = sGameOptionsInField ? 3 : (gTasks[taskId].data[1] == 0 ? ARRAY_COUNT(sGameOptionsPage1Ids) : ARRAY_COUNT(sGameOptionsPage2Ids));
         gTasks[taskId].data[2] = (gTasks[taskId].data[2] + rows - 1) % rows;
         PlaySE(SE_SELECT);
-        PrintGameOptions(taskId);
+        if (sGameOptionsInField)
+            PrintFieldOptions(taskId);
+        else
+            PrintGameOptions(taskId);
     }
     else if (JOY_NEW(DPAD_DOWN))
     {
-        u8 rows = gTasks[taskId].data[1] == 0 ? ARRAY_COUNT(sGameOptionsPage1Ids) : ARRAY_COUNT(sGameOptionsPage2Ids);
+        u8 rows = sGameOptionsInField ? 3 : (gTasks[taskId].data[1] == 0 ? ARRAY_COUNT(sGameOptionsPage1Ids) : ARRAY_COUNT(sGameOptionsPage2Ids));
         gTasks[taskId].data[2] = (gTasks[taskId].data[2] + 1) % rows;
         PlaySE(SE_SELECT);
-        PrintGameOptions(taskId);
+        if (sGameOptionsInField)
+            PrintFieldOptions(taskId);
+        else
+            PrintGameOptions(taskId);
     }
     else if (JOY_NEW(A_BUTTON | DPAD_LEFT))
     {
-        if (JOY_NEW(A_BUTTON) && gTasks[taskId].data[1] == 1 && gTasks[taskId].data[2] == 1 && GetGameOption(GAME_OPTION_PC_ANYWHERE))
+        if (sGameOptionsInField && JOY_NEW(A_BUTTON) && gTasks[taskId].data[2] == 1)
         {
             sOpenPcOnClose = TRUE;
             CloseGameOptionsMenu(taskId);
             return;
         }
-        ChangeSelectedOption(taskId, -1);
+        if (sGameOptionsInField)
+        {
+            if (gTasks[taskId].data[2] == 0)
+                SetGameOption(GAME_OPTION_INFINITE_REPEL, !GetGameOption(GAME_OPTION_INFINITE_REPEL));
+            else if (gTasks[taskId].data[2] == 2)
+                SetGameOption(GAME_OPTION_EXP_SHARE, !GetGameOption(GAME_OPTION_EXP_SHARE));
+        }
+        else
+            ChangeSelectedOption(taskId, JOY_NEW(A_BUTTON) ? 1 : -1);
         PlaySE(SE_SELECT);
-        PrintGameOptions(taskId);
+        if (sGameOptionsInField)
+            PrintFieldOptions(taskId);
+        else
+            PrintGameOptions(taskId);
     }
     else if (JOY_NEW(DPAD_RIGHT))
     {
-        ChangeSelectedOption(taskId, 1);
+        if (sGameOptionsInField)
+        {
+            if (gTasks[taskId].data[2] == 0)
+                SetGameOption(GAME_OPTION_INFINITE_REPEL, !GetGameOption(GAME_OPTION_INFINITE_REPEL));
+            else if (gTasks[taskId].data[2] == 2)
+                SetGameOption(GAME_OPTION_EXP_SHARE, !GetGameOption(GAME_OPTION_EXP_SHARE));
+        }
+        else
+            ChangeSelectedOption(taskId, 1);
         PlaySE(SE_SELECT);
-        PrintGameOptions(taskId);
+        if (sGameOptionsInField)
+            PrintFieldOptions(taskId);
+        else
+            PrintGameOptions(taskId);
     }
-    else if (JOY_NEW(SELECT_BUTTON))
+    else if (JOY_NEW(SELECT_BUTTON) && !sGameOptionsInField)
     {
         gTasks[taskId].data[3] = TRUE;
         PlaySE(SE_SELECT);
@@ -763,6 +870,8 @@ static void Task_GameOptionsMenu(u8 taskId)
     }
     else if (JOY_NEW(L_BUTTON | R_BUTTON))
     {
+        if (sGameOptionsInField)
+            return;
         gTasks[taskId].data[1] ^= 1;
         gTasks[taskId].data[2] = 0;
         PlaySE(SE_SELECT);

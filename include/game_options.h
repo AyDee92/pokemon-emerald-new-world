@@ -32,6 +32,8 @@ enum Ability GetGameplayAbility(u32 personality, enum Species species, u8 abilit
 void BeginNuzlockeWildEncounter(void);
 bool8 IsNuzlockeCatchBlocked(enum Species species, bool8 isShiny);
 bool8 IsNuzlockeEncounterCatchable(enum Species species, bool8 isShiny);
+bool8 IsNuzlockeChallengeActive(void);
+void ActivateNuzlockeChallenge(void);
 void MarkNuzlockeEncounterCaught(void);
 void MarkNuzlockePartyMonFainted(u8 partyIndex);
 bool8 IsNuzlockePartyMonFainted(u8 partyIndex);
