@@ -521,6 +521,136 @@ static enum Species CreateWildMonWithOptions(enum Species species, u8 level, boo
     return species;
 }
 
+static u8 GetWildEncounterSlotCount(enum WildPokemonArea area)
+{
+    switch (area)
+    {
+    case WILD_AREA_LAND:
+        return NUM_LAND_MONS_ENCOUNTER_SLOTS;
+    case WILD_AREA_WATER:
+        return NUM_WATER_MONS_ENCOUNTER_SLOTS;
+    case WILD_AREA_ROCKS:
+        return NUM_ROCK_SMASH_MONS_ENCOUNTER_SLOTS;
+    case WILD_AREA_FISHING:
+        return NUM_FISHING_MONS_ENCOUNTER_SLOTS;
+    case WILD_AREA_HIDDEN:
+        return NUM_HIDDEN_MONS_ENCOUNTER_SLOTS;
+    }
+    return 0;
+}
+
+static const struct WildPokemonInfo *GetWildEncounterInfoForArea(const struct WildEncounterTypes *types, enum WildPokemonArea area)
+{
+    switch (area)
+    {
+    case WILD_AREA_LAND:
+        return types->landMonsInfo;
+    case WILD_AREA_WATER:
+        return types->waterMonsInfo;
+    case WILD_AREA_ROCKS:
+        return types->rockSmashMonsInfo;
+    case WILD_AREA_FISHING:
+        return types->fishingMonsInfo;
+    case WILD_AREA_HIDDEN:
+        return types->hiddenMonsInfo;
+    }
+    return NULL;
+}
+
+static enum Species GetGameplaySpeciesForWildTable(const struct WildPokemonInfo *wildMonInfo, enum WildPokemonArea area, u8 wildMonIndex)
+{
+    enum Species uniqueSpecies[NUM_LAND_MONS_ENCOUNTER_SLOTS];
+    u8 uniqueCount = 0;
+    u8 routeUniqueCount = 0;
+    u8 slotCount = GetWildEncounterSlotCount(area);
+    enum Species originalSpecies = wildMonInfo->wildPokemon[wildMonIndex].species;
+    u8 speciesIndex = 0;
+
+    // Keep the existing full-table behavior when all generations are enabled or the randomizer is active.
+    if (GetGameOption(GAME_OPTION_GENERATION) == 0 || GetGameOption(GAME_OPTION_RANDOM_POKEMON) != 0)
+        return originalSpecies;
+
+    for (u8 i = 0; i < slotCount; i++)
+    {
+        enum Species species = wildMonInfo->wildPokemon[i].species;
+        bool8 alreadyAdded = FALSE;
+
+        for (u8 j = 0; j < uniqueCount; j++)
+        {
+            if (uniqueSpecies[j] == species)
+            {
+                alreadyAdded = TRUE;
+                break;
+            }
+        }
+        if (alreadyAdded)
+            continue;
+
+        uniqueSpecies[uniqueCount] = species;
+        if (species == originalSpecies)
+            speciesIndex = uniqueCount;
+        uniqueCount++;
+    }
+
+    if (uniqueCount == 0)
+        return originalSpecies;
+
+    u16 headerId = GetCurrentMapWildMonHeaderId();
+    if (headerId != HEADER_NONE)
+    {
+        // Use the most diverse time-of-day table as the route's shared replacement pool.
+        // This keeps morning/day/night encounters within the same small route-level set.
+        for (u8 time = 0; time < TIMES_OF_DAY_COUNT; time++)
+        {
+            const struct WildPokemonInfo *candidate = GetWildEncounterInfoForArea(
+                &gWildMonHeaders[headerId].encounterTypes[time], area);
+            if (candidate == NULL)
+                continue;
+
+            enum Species candidateSpecies[NUM_LAND_MONS_ENCOUNTER_SLOTS];
+            u8 candidateCount = 0;
+            for (u8 i = 0; i < slotCount; i++)
+            {
+                enum Species species = candidate->wildPokemon[i].species;
+                bool8 alreadyAdded = FALSE;
+                for (u8 j = 0; j < candidateCount; j++)
+                {
+                    if (candidateSpecies[j] == species)
+                    {
+                        alreadyAdded = TRUE;
+                        break;
+                    }
+                }
+                if (!alreadyAdded)
+                    candidateSpecies[candidateCount++] = species;
+            }
+            if (candidateCount > routeUniqueCount)
+            {
+                routeUniqueCount = candidateCount;
+                for (u8 i = 0; i < candidateCount; i++)
+                    uniqueSpecies[i] = candidateSpecies[i];
+            }
+        }
+    }
+    if (routeUniqueCount == 0)
+        routeUniqueCount = uniqueCount;
+
+    // Group roughly three original species into one replacement. This keeps common 12-slot
+    // tables to four species while preserving a larger pool for unusually diverse tables.
+    u8 poolSize = (routeUniqueCount + 2) / 3;
+    if (poolSize < 2)
+        poolSize = 2;
+    u8 poolIndex = speciesIndex * poolSize / uniqueCount;
+    u8 sourceIndex = poolIndex * routeUniqueCount / poolSize;
+    u16 routeSeed = (headerId == HEADER_NONE
+        ? gSaveBlock1Ptr->location.mapGroup * 257u + gSaveBlock1Ptr->location.mapNum
+        : headerId);
+    routeSeed = routeSeed * 31u + area * 7u + poolIndex * 977u;
+    return GetGameplayWildSpecies(uniqueSpecies[sourceIndex],
+                                  area == WILD_AREA_WATER || area == WILD_AREA_FISHING,
+                                  routeSeed);
+}
+
 void CreateWildMon(enum Species species, u8 level)
 {
     CreateWildMonWithOptions(species, level, FALSE);
@@ -591,14 +721,14 @@ bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum WildPok
     if (gMapHeader.mapLayoutId != LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS && flags & WILD_CHECK_KEEN_EYE && !IsAbilityAllowingEncounter(level))
         return FALSE;
 
-    CreateWildMonWithOptions(wildMonInfo->wildPokemon[wildMonIndex].species, level, area == WILD_AREA_WATER);
+    CreateWildMonWithOptions(GetGameplaySpeciesForWildTable(wildMonInfo, area, wildMonIndex), level, area == WILD_AREA_WATER);
     return TRUE;
 }
 
 static u16 GenerateFishingWildMon(const struct WildPokemonInfo *wildMonInfo, u8 rod)
 {
     u8 wildMonIndex = ChooseWildMonIndex_Fishing(rod);
-    enum Species wildMonSpecies = wildMonInfo->wildPokemon[wildMonIndex].species;
+    enum Species wildMonSpecies = GetGameplaySpeciesForWildTable(wildMonInfo, WILD_AREA_FISHING, wildMonIndex);
     u8 level = ChooseWildMonLevel(wildMonInfo->wildPokemon, wildMonIndex, WILD_AREA_FISHING);
 
     UpdateChainFishingStreak();

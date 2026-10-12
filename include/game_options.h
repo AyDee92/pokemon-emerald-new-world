@@ -24,6 +24,7 @@ enum GameOptionId
 u8 GetGameOption(enum GameOptionId option);
 void SetGameOption(enum GameOptionId option, u8 value);
 enum Species GetGameplaySpecies(enum Species originalSpecies, enum Type requiredType, bool8 waterOnly);
+enum Species GetGameplayWildSpecies(enum Species originalSpecies, bool8 waterOnly, u16 routeSeed);
 enum Species GetGameplayTrainerSpecies(enum Species originalSpecies, enum Type requiredType);
 enum Type GetGameplayTrainerTheme(const struct Trainer *trainer);
 void ApplyGameplayMonOptions(struct Pokemon *mon, enum Species species);
