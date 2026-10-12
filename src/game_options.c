@@ -165,6 +165,19 @@ static EWRAM_DATA bool8 sGameplaySpeciesCandidatesInitialized;
 static EWRAM_DATA bool8 sGameplaySpeciesCandidates[NUM_SPECIES];
 static EWRAM_DATA bool8 sGameplaySpeciesSeenNationalDex[NATIONAL_DEX_COUNT + 1];
 
+static const enum Species sGameplayStarterSpecies[][3] =
+{
+    {SPECIES_BULBASAUR, SPECIES_CHARMANDER, SPECIES_SQUIRTLE},
+    {SPECIES_CHIKORITA, SPECIES_CYNDAQUIL, SPECIES_TOTODILE},
+    {SPECIES_TREECKO, SPECIES_TORCHIC, SPECIES_MUDKIP},
+    {SPECIES_TURTWIG, SPECIES_CHIMCHAR, SPECIES_PIPLUP},
+    {SPECIES_SNIVY, SPECIES_TEPIG, SPECIES_OSHAWOTT},
+    {SPECIES_CHESPIN, SPECIES_FENNEKIN, SPECIES_FROAKIE},
+    {SPECIES_ROWLET, SPECIES_LITTEN, SPECIES_POPPLIO},
+    {SPECIES_GROOKEY, SPECIES_SCORBUNNY, SPECIES_SOBBLE},
+    {SPECIES_SPRIGATITO, SPECIES_FUECOCO, SPECIES_QUAXLY},
+};
+
 static void InitGameplaySpeciesCandidates(void)
 {
     if (sGameplaySpeciesCandidatesInitialized)
@@ -327,24 +340,81 @@ static bool8 IsGameplaySpeciesAllowed(enum Species species, u8 generation, enum 
     return TRUE;
 }
 
-static enum Species ChooseGameplaySpecies(enum Species originalSpecies, enum Type requiredType, bool8 waterOnly, bool8 scaled, u16 range)
+static bool8 IsGameplayLegendary(enum Species species)
+{
+    const struct SpeciesInfo *info = &gSpeciesInfo[species];
+    return info->isRestrictedLegendary || info->isSubLegendary || info->isMythical;
+}
+
+static bool8 IsGameplayStarter(enum Species species)
+{
+    enum Species baseSpecies = species;
+
+    for (u32 stage = 0; stage < 3; stage++)
+    {
+        for (u32 generation = 0; generation < ARRAY_COUNT(sGameplayStarterSpecies); generation++)
+        {
+            for (u32 starter = 0; starter < ARRAY_COUNT(sGameplayStarterSpecies[generation]); starter++)
+            {
+                if (baseSpecies == sGameplayStarterSpecies[generation][starter])
+                    return TRUE;
+            }
+        }
+        baseSpecies = GetSpeciesPreEvolution(baseSpecies);
+        if (baseSpecies == SPECIES_NONE)
+            break;
+    }
+
+    return FALSE;
+}
+
+static u32 GetGameplaySpeciesHash(enum Species originalSpecies, u8 generation, enum Type requiredType, bool8 waterOnly)
+{
+    // A stable hash makes non-randomizer substitutions consistent across encounters and battles.
+    return (originalSpecies * 1103515245u + generation * 12345u + requiredType * 2654435761u + waterOnly * 97u) >> 8;
+}
+
+static enum Species ChooseGameplaySpecies(enum Species originalSpecies, enum Type requiredType, bool8 waterOnly, bool8 scaled, u16 range, bool8 keepLegendary, bool8 starterOnly, bool8 randomize)
 {
     enum Species chosen = SPECIES_NONE;
     u32 candidates = 0;
     u32 targetBst = GetSpeciesBaseStatTotal(originalSpecies);
     u8 generation = GetGameOption(GAME_OPTION_GENERATION);
+    u32 selection;
 
     for (enum Species species = SPECIES_BULBASAUR; species < NUM_SPECIES; species++)
     {
         u32 bst;
         if (!IsGameplaySpeciesAllowed(species, generation, requiredType, waterOnly))
             continue;
+        if (keepLegendary != IsGameplayLegendary(species))
+            continue;
+        if (starterOnly && !IsGameplayStarter(species))
+            continue;
         bst = GetSpeciesBaseStatTotal(species);
         if (scaled && (bst + range < targetBst || bst > targetBst + range))
             continue;
         candidates++;
-        if (Random() % candidates == 0)
+        if (randomize && Random() % candidates == 0)
             chosen = species;
+    }
+
+    if (!randomize && candidates != 0)
+    {
+        selection = GetGameplaySpeciesHash(originalSpecies, generation, requiredType, waterOnly) % candidates;
+        for (enum Species species = SPECIES_BULBASAUR; species < NUM_SPECIES; species++)
+        {
+            u32 bst;
+            if (!IsGameplaySpeciesAllowed(species, generation, requiredType, waterOnly)
+             || keepLegendary != IsGameplayLegendary(species)
+             || (starterOnly && !IsGameplayStarter(species)))
+                continue;
+            bst = GetSpeciesBaseStatTotal(species);
+            if (scaled && (bst + range < targetBst || bst > targetBst + range))
+                continue;
+            if (selection-- == 0)
+                return species;
+        }
     }
     return chosen;
 }
@@ -355,6 +425,8 @@ enum Species GetGameplaySpecies(enum Species originalSpecies, enum Type required
     u8 generation = GetGameOption(GAME_OPTION_GENERATION);
     bool8 originalAllowed;
     bool8 scaled;
+    bool8 randomize = randomMode != 0;
+    bool8 keepLegendary;
     enum Species species;
 
     if (originalSpecies < SPECIES_BULBASAUR || originalSpecies >= NUM_SPECIES)
@@ -362,21 +434,39 @@ enum Species GetGameplaySpecies(enum Species originalSpecies, enum Type required
     originalAllowed = IsGameplaySpeciesAllowed(originalSpecies, generation, requiredType, waterOnly);
     if (randomMode == 0 && originalAllowed)
         return originalSpecies;
+    if (requiredType == TYPE_NONE)
+        requiredType = GetSpeciesType(originalSpecies, 0);
+    keepLegendary = IsGameplayLegendary(originalSpecies);
 
     scaled = randomMode == 2 || (randomMode == 0 && (generation != 0 || (waterOnly && !originalAllowed)));
-    species = ChooseGameplaySpecies(originalSpecies, requiredType, waterOnly, scaled, 50);
+    species = ChooseGameplaySpecies(originalSpecies, requiredType, waterOnly, scaled, 50, keepLegendary, FALSE, randomize);
     if (species == SPECIES_NONE && scaled)
-        species = ChooseGameplaySpecies(originalSpecies, requiredType, waterOnly, TRUE, 100);
+        species = ChooseGameplaySpecies(originalSpecies, requiredType, waterOnly, TRUE, 100, keepLegendary, FALSE, randomize);
     if (species == SPECIES_NONE)
-        species = ChooseGameplaySpecies(originalSpecies, requiredType, waterOnly, FALSE, 0);
+        species = ChooseGameplaySpecies(originalSpecies, requiredType, waterOnly, FALSE, 0, keepLegendary, FALSE, randomize);
     if (species == SPECIES_NONE && requiredType != TYPE_NONE)
-        species = ChooseGameplaySpecies(originalSpecies, TYPE_NONE, waterOnly, FALSE, 0);
+        species = ChooseGameplaySpecies(originalSpecies, TYPE_NONE, waterOnly, FALSE, 0, keepLegendary, FALSE, randomize);
     return species == SPECIES_NONE ? originalSpecies : species;
 }
 
 enum Species GetGameplayTrainerSpecies(enum Species originalSpecies, enum Type requiredType)
 {
     u8 generation = GetGameOption(GAME_OPTION_GENERATION);
+    bool8 randomize = GetGameOption(GAME_OPTION_RANDOM_POKEMON) != 0;
+    bool8 keepLegendary = IsGameplayLegendary(originalSpecies);
+
+    if (IsGameplayStarter(originalSpecies))
+    {
+        enum Type starterType = GetSpeciesType(originalSpecies, 0);
+        if (generation != 0 && !randomize
+         && IsGameplaySpeciesAllowed(originalSpecies, generation, starterType, FALSE))
+            return originalSpecies;
+
+        enum Species starter = ChooseGameplaySpecies(originalSpecies, starterType, FALSE, FALSE, 0,
+                                                      keepLegendary, TRUE, randomize);
+        if (starter != SPECIES_NONE)
+            return starter;
+    }
 
     if (generation != 0 || GetGameOption(GAME_OPTION_RANDOM_POKEMON) != 0)
         return GetGameplaySpecies(originalSpecies, requiredType, FALSE);
@@ -385,24 +475,38 @@ enum Species GetGameplayTrainerSpecies(enum Species originalSpecies, enum Type r
     // and look for a similar base-stat total so the battle pacing stays familiar.
     for (u16 range = 50; range <= 200; range *= 2)
     {
-        enum Species chosen = SPECIES_NONE;
         u32 candidates = 0;
         u32 targetBst = GetSpeciesBaseStatTotal(originalSpecies);
+        u32 selection;
 
         for (enum Species species = SPECIES_BULBASAUR; species < NUM_SPECIES; species++)
         {
             if (GetSpeciesGeneration(species) == GetSpeciesGeneration(originalSpecies)
              || !IsGameplaySpeciesAllowed(species, 0, requiredType, FALSE))
                 continue;
+            if (keepLegendary != IsGameplayLegendary(species))
+                continue;
             u32 bst = GetSpeciesBaseStatTotal(species);
             if (bst + range < targetBst || bst > targetBst + range)
                 continue;
             candidates++;
-            if (Random() % candidates == 0)
-                chosen = species;
         }
-        if (chosen != SPECIES_NONE)
-            return chosen;
+        if (candidates == 0)
+            continue;
+
+        selection = GetGameplaySpeciesHash(originalSpecies, 0, requiredType, FALSE) % candidates;
+        for (enum Species species = SPECIES_BULBASAUR; species < NUM_SPECIES; species++)
+        {
+            if (GetSpeciesGeneration(species) == GetSpeciesGeneration(originalSpecies)
+             || !IsGameplaySpeciesAllowed(species, 0, requiredType, FALSE)
+             || keepLegendary != IsGameplayLegendary(species))
+                continue;
+            u32 bst = GetSpeciesBaseStatTotal(species);
+            if (bst + range < targetBst || bst > targetBst + range)
+                continue;
+            if (selection-- == 0)
+                return species;
+        }
     }
 
     return GetGameplaySpecies(originalSpecies, requiredType, FALSE);
